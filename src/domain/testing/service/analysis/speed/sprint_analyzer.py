@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 from enum import Enum
+from ..base.base_analyzer import BaseAnalyzer
 from .speed_acceleration_profiler import SpeedAccelerationProfiler, SpeedQuality
 
 class TrainingFocus(Enum):
@@ -26,13 +27,13 @@ class SprintResults:
     flying_10m: Optional[float] = None
     historical_results: Optional[List[Dict]] = None
 
-class SprintAnalyzer:
+class SprintAnalyzer(BaseAnalyzer):  # Changed to inherit from BaseAnalyzer
     def __init__(self, result_repository):
-        self._result_repository = result_repository
+        super().__init__(result_repository)  # Add this line to initialize BaseAnalyzer
         self._speed_profiler = SpeedAccelerationProfiler()
 
-    def analyze_sprint_profile(self, athlete_id: UUID, test_date: datetime) -> Dict:
-        """Complete sprint profile analysis"""
+    def analyze(self, athlete_id: UUID, test_date: datetime) -> Dict:
+        """Complete sprint profile analysis - implements BaseAnalyzer.analyze"""
         sprint_results = self._get_sprint_results(athlete_id, test_date)
         
         if not sprint_results:
@@ -44,9 +45,11 @@ class SprintAnalyzer:
             sprint_results.flying_10m
         )
 
-        # Get historical results for trend analysis
+        # Add trend analysis using BaseAnalyzer functionality
         if sprint_results.historical_results:
-            basic_analysis["trends"] = self._analyze_trends(sprint_results.historical_results)
+            values = [r.get('value') for r in sprint_results.historical_results]
+            dates = [r.get('date') for r in sprint_results.historical_results]
+            basic_analysis["trends"] = self.analyze_trend(values, dates)
 
         return basic_analysis
 
@@ -71,8 +74,8 @@ class SprintAnalyzer:
         if not sprint_10m or not sprint_20m:
             raise ValueError("Both 10m and 20m sprint results required")
 
-        # Get historical results for trend analysis
-        historical = self._result_repository.get_historical_results(
+        # Use BaseAnalyzer's historical results method
+        historical = self.get_historical_results(
             athlete_id=athlete_id,
             test_names=["10M Sprint", "20M Sprint", "Flying 10M"],
             limit=10
@@ -85,29 +88,33 @@ class SprintAnalyzer:
             historical_results=historical
         )
 
+    # Rest of your existing methods remain the same
     def _analyze_sprint_metrics(self, 
                               sprint_10m: float, 
                               sprint_20m: float,
                               flying_10m: Optional[float] = None) -> Dict:
         """Comprehensive sprint analysis"""
-        # Get acceleration profile
+        # Your existing implementation remains the same
         acceleration_profile = self._speed_profiler.analyze_acceleration_profile(
             sprint_10m, sprint_20m, flying_10m
         )
 
-        # Calculate normalized 20m score for training recommendations
         normalized_20m = sprint_20m * (1.0 / sprint_10m)
         program, recommendations = self._get_training_recommendations(
             normalized_20m,
             acceleration_profile
         )
 
+        # Add basic statistics using BaseAnalyzer
+        sprint_times = {
+            "10m": sprint_10m,
+            "20m": sprint_20m,
+            "flying_10m": flying_10m
+        }
+
         return {
-            "sprint_times": {
-                "10m": sprint_10m,
-                "20m": sprint_20m,
-                "flying_10m": flying_10m
-            },
+            "sprint_times": sprint_times,
+            "basic_stats": self.calculate_basic_statistics([sprint_10m, sprint_20m]),
             "acceleration_profile": acceleration_profile,
             "training_program": program,
             "recommendations": recommendations,
@@ -115,6 +122,7 @@ class SprintAnalyzer:
                 acceleration_profile, flying_10m
             )
         }
+
 
     def _get_training_recommendations(self, 
                                     normalized_20m: float,
