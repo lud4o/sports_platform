@@ -19,6 +19,101 @@ class TestManagementService:
         self._analyzer_factory = TestAnalyzerFactory(repository)
         self._imtp_analyzer = IMTPAnalyzer()
 
+
+# New methods from when changing database:
+    def get_test_analysis(self, test_result_id: UUID) -> Optional[Dict]:
+        """Get analysis for a specific test result"""
+        result = self._repository.get_test_result(test_result_id)
+        if not result:
+            return None
+
+        test = self._repository.get(result.test_id)
+        analyzer = self._analyzer_factory.get_analyzer(test)
+        if analyzer:
+            return analyzer.analyze(
+                athlete_id=result.athlete_id,
+                test_date=result.test_date,
+                primary_value=result.value,
+                additional_values=result.additional_values
+            )
+        return None
+
+    def get_athlete_test_history(self,
+                               athlete_id: UUID,
+                               test_id: UUID,
+                               time_period: Optional[tuple] = None,
+                               limit: int = 10) -> List[Dict]:
+        """Get athlete's test history with analysis"""
+        results = self._repository.get_athlete_results(
+            athlete_id=athlete_id,
+            test_id=test_id,
+            time_period=time_period,
+            limit=limit
+        )
+        
+        # Include analysis for each result
+        return [{
+            'result': result,
+            'analysis': self.get_test_analysis(result.id)
+        } for result in results]
+
+    def validate_test_input(self,
+                          test_id: UUID,
+                          primary_value: float,
+                          additional_values: Optional[Dict] = None) -> bool:
+        """Validate test input values before recording"""
+        test = self._repository.get(test_id)
+        if not test:
+            raise ValueError(f"Test not found: {test_id}")
+
+        if not test.validate_result(primary_value):
+            return False
+
+        if additional_values:
+            for name, value in additional_values.items():
+                if not test.validate_result(value, name):
+                    return False
+
+        return True
+
+    async def analyze_test_batch(self,
+                              athlete_id: UUID,
+                              test_results: List[Dict]) -> List[Dict]:
+        """Analyze multiple test results in parallel"""
+        analyses = []
+        for result in test_results:
+            analysis = await self._analyze_single_result(
+                athlete_id=athlete_id,
+                test_id=result['test_id'],
+                primary_value=result['primary_value'],
+                additional_values=result.get('additional_values'),
+                test_date=result.get('test_date')
+            )
+            analyses.append({
+                'result': result,
+                'analysis': analysis
+            })
+        return analyses
+
+    async def _analyze_single_result(self,
+                                  athlete_id: UUID,
+                                  test_id: UUID,
+                                  primary_value: float,
+                                  additional_values: Optional[Dict] = None,
+                                  test_date: Optional[datetime] = None) -> Dict:
+        """Analyze a single test result asynchronously"""
+        test = await self._repository.get(test_id)
+        analyzer = self._analyzer_factory.get_analyzer(test)
+        if analyzer:
+            return await analyzer.analyze(
+                athlete_id=athlete_id,
+                test_date=test_date or datetime.utcnow(),
+                primary_value=primary_value,
+                additional_values=additional_values
+            )
+        return None
+
+
     # Test Definition Management
     def create_test(self,
                    name: str,

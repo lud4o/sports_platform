@@ -1,28 +1,54 @@
 from datetime import date
+import uuid
+from src.interfaces.web import db  # Import SQLAlchemy instance
 from sqlalchemy import Column, String, Date, Boolean, Enum
 from sqlalchemy.orm import relationship
-from ..base import BaseModel
-from domain.athlete.entity.value_objects import Gender
+from sqlalchemy.dialects.postgresql import UUID as pgUUID
+from ....domain.athlete.value_objects import Gender
 
-class AthleteModel(BaseModel):
+class Athlete(db.Model):
     __tablename__ = 'athletes'
-
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
+    
+    id = Column(pgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
     birthdate = Column(Date, nullable=False)
-    gender = Column(Enum(Gender), nullable=False)
-    sport = Column(String(100), nullable=False)
-    email = Column(String(255), unique=True, nullable=True)
-    custom_team = Column(String(50), nullable=True)
+    gender = Column(String, nullable=False)
+    sport = Column(String, nullable=False)
+    email = Column(String)
     is_active = Column(Boolean, default=False)
+    
+    test_results = db.relationship("TestResult", back_populates="athlete", lazy="dynamic", cascade="all, delete-orphan")
+    anthropometric_data = db.relationship("AnthropometricData", back_populates="athlete", cascade="all, delete-orphan")
+    groups = db.relationship("Group", secondary="athlete_groups", back_populates="athletes")
 
-    # Relationships will be added here later
-    test_results = relationship("TestResultModel", back_populates="athlete")
-    group_memberships = relationship("GroupMembershipModel", back_populates="athlete")
+    def __repr__(self):
+        return f'<Athlete {self.first_name} {self.last_name}>'
 
-    def to_entity(self) -> Athlete:
+    @property
+    def age(self) -> int:
+        today = date.today()
+        return today.year - self.birthdate.year - (
+            (today.month, today.day) < (self.birthdate.month, self.birthdate.day)
+        )
+
+    @property
+    def age_group(self) -> str:
+        """Calculate age group based on current age"""
+        age = self.age
+        if age <= 12: return 'U12'
+        elif age <= 14: return 'U14'
+        elif age <= 16: return 'U16'
+        elif age <= 18: return 'U18'
+        elif age <= 20: return 'U20'
+        return 'Senior'
+
+    def to_entity(self) -> 'AthleteEntity':
         """Convert DB model to domain entity"""
-        return Athlete(
+        from ....domain.athlete.entity.athlete import Athlete as AthleteEntity
+        from ....domain.athlete.value_objects import Name, EmailAddress
+        
+        return AthleteEntity(
             id=self.id,
             name=Name(self.first_name, self.last_name),
             birthdate=self.birthdate,
@@ -33,7 +59,7 @@ class AthleteModel(BaseModel):
         )
 
     @classmethod
-    def from_entity(cls, athlete: Athlete) -> 'AthleteModel':
+    def from_entity(cls, athlete: 'AthleteEntity') -> 'Athlete':
         """Create DB model from domain entity"""
         return cls(
             id=athlete.id,

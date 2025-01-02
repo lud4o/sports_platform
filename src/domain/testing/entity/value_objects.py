@@ -1,7 +1,13 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List
-from domain.core.value_object import ValueObject
+from typing import Optional, List, Dict
+from ...core.value_object import ValueObject  # Changed to relative import
+
+
+class TestPhase(Enum):
+    DAILY = "daily_monitoring"
+    WEEKLY = "weekly_monitoring"
+    CYCLE_END = "training_cycle_end"
 
 class TestCategory(Enum):
     SPEED = "Speed"
